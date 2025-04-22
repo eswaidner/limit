@@ -1,3 +1,5 @@
+export * from "./interpreter";
+
 const screenSize: [number, number] = [480, 270];
 const memorySize: number = 1024 * 1024 * 32; // 32MB
 const memory: Uint8ClampedArray = new Uint8ClampedArray(memorySize);
