@@ -25,4 +25,16 @@ body {
     left: 0;
     right: 0;
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+#app-canvas {
+    image-rendering: pixelated;
+    width: calc(480px * 3);
+    height: calc(270px * 3);
+    background-color: white;
+    border-radius: 5px;
 }
