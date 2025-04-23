@@ -1,10 +1,28 @@
+import { Limit } from "./limit";
+
 let source: string[] = [];
 let instructions: Instruction[] = [];
-let labels: Map<string, Label> = new Map();
+let labels: Map<string, number> = new Map();
 
-type Opcode = "add";
+const maxInt32 = 31 ** 2 - 1;
+const minInt32 = -(31 ** 2);
 
-type Value = Immediate | Pointer | Label;
+type Op = MemoryOp | ControlOp;
+
+// prettier-ignore
+type MemoryOp = "add" | "sub" | "mul" | "div" | "mod" | "lsh" | "rsh" | "and" | "or" | "xor";
+type ControlOp = "jeq" | "jne";
+
+// prettier-ignore
+const opcodes: Set<string> = new Set([
+  "add",    "lsh",    "jeq",
+  "sub",    "rsh",    "jne",
+  "mul",    "and",
+  "div",    "or" ,
+  "mod",    "xor",
+]);
+
+type Value = Immediate | Pointer | InstructionIndex;
 
 interface Immediate {
   type: "immediate";
@@ -16,77 +34,257 @@ interface Pointer {
   value: number;
 }
 
-interface Label {
-  type: "label";
-  name: string;
+interface InstructionIndex {
+  type: "instruction-index";
   value: number;
 }
 
 interface Instruction {
   lineIndex: number;
-  opcode: Opcode;
+  opcode: Op;
   arg1: Value;
   arg2: Value;
   dest: Value;
 }
 
-function parseOpcode(src: string): Opcode {
-  switch (src) {
-    case "add":
-      return "add";
-    default:
-      throw new Error(`unknown opcode '$${src}'`);
-  }
+function isDigit(char: string): boolean {
+  return char[0] >= "0" && char[0] <= "9";
+}
+
+function parseOpcode(src: string): Op {
+  if (!opcodes.has(src)) throw new Error(`unknown instruction '${src}'`);
+  return src as Op;
 }
 
 function parseValue(src: string): Value {
-  //TODO
-  return parseImmediate(src);
+  if (src[0] === "x") return parsePointer(src);
+  if (isDigit(src[0])) return parseImmediate(src);
+  else return parseLabel(src);
 }
 
 function parseImmediate(src: string): Immediate {
-  //TODO support decimal, hex, and binary
-  //TODO support - sign for decimal
-  return { type: "immediate", value: 0 };
+  const neg = src[0] === "-";
+  let num = src.slice(neg ? 1 : 0, src.length);
+
+  // detect base from prefix
+  let base = 10;
+  if (num[0] === "0") {
+    if (num[1] === "x") base = 16;
+    else if (num[1] === "b") base = 2;
+  }
+
+  if (base !== 10) {
+    if (neg) throw new Error(`'-' is only valid for decimal immediates`);
+
+    // remove base prefix if needed
+    num = num.slice(2, num.length);
+  }
+
+  const value = parseInt(num, base) * (neg ? -1 : 1);
+
+  if (isNaN(value)) throw new Error(`invalid immediate '${src}'`);
+
+  if (value > maxInt32 || value < minInt32) {
+    throw new Error(`immediate out of range '${src}'`);
+  }
+
+  return { type: "immediate", value };
 }
 
-function parseAddress(src: string): Pointer {
-  //TODO xN
-  return { type: "pointer", value: 0 };
+function parsePointer(src: string): Pointer {
+  const address = parseInt(src.slice(1, src.length));
+  //TODO check if in memory address range
+
+  return { type: "pointer", value: address };
 }
 
-function parseLabel(src: string): Label {
-  //TODO
-  return { type: "label", name: "", value: 0 };
+function parseLabel(src: string): InstructionIndex {
+  const value = labels.get(src);
+  if (value === undefined) throw new Error(`undefined label '${src}'`);
+  return { type: "instruction-index", value };
+}
+
+function validateLabel(name: string) {
+  if (!name.match(/[a-zA-Z_][0-9a-zA-Z_]./)) {
+    throw new Error(`invalid label '${name}'`);
+  }
 }
 
 export function load(src: string) {
   source = src.split("\n");
 
-  instructions = [];
+  // label definition prepass
+  let instructionCount = 0;
   for (let i = 0; i < source.length; i++) {
-    const l = source[i];
+    const line = source[i].trim();
 
     // skip comments
-    if (l.trimStart()[0] === "#") continue;
+    if (line[0] === "#") continue;
 
-    const fields = l
+    // skip blank lines
+    if (line.length <= 0) continue;
+
+    // treat as label definition
+    const endIdx = line.length - 1;
+    if (line[endIdx] === ":") {
+      const name = line.slice(0, endIdx);
+      validateLabel(name);
+
+      if (labels.has(name)) {
+        throw new Error(`label redefinition '${name}' at line ${i}`);
+      }
+
+      labels.set(name, instructionCount);
+      continue;
+    }
+
+    instructionCount += 1;
+  }
+
+  // parse instructions
+  instructions = [];
+  for (let i = 0; i < source.length; i++) {
+    const line = source[i].trim();
+
+    // skip comments
+    if (line[0] === "#") continue;
+
+    const fields = line
       .replace(",", " ")
       .split(" ")
+      .map((f) => f.trim())
       .filter((f) => f.length > 0);
 
+    // skip blank lines
     if (fields.length <= 0) continue;
 
-    console.log(i, fields);
+    // skip label definitions
+    const endIdx = fields[0].length - 1;
+    if (fields[0][endIdx] === ":") continue;
 
-    instructions.push({
-      lineIndex: i,
-      opcode: parseOpcode(fields[0]),
-      arg1: parseValue(fields[1]),
-      arg2: parseValue(fields[2]),
-      dest: parseValue(fields[3]),
-    });
+    const opcode = parseOpcode(fields[0]);
+
+    const arg1 = parseValue(fields[1]);
+    if (arg1.type === "instruction-index") {
+      throw new Error(`arg1 cannot be a label (line ${i})`);
+    }
+
+    const arg2 = parseValue(fields[2]);
+    if (arg2.type === "instruction-index") {
+      throw new Error(`arg2 cannot be a label (line ${i})`);
+    }
+
+    const dest = parseValue(fields[3]);
+
+    instructions.push({ lineIndex: i, opcode, arg1, arg2, dest });
   }
 }
 
-export function execute() {}
+export function execute() {
+  const mem = Limit.memory();
+
+  // execute instructions
+  let pc = 0;
+  let i = 0;
+  const numInstructions = instructions.length;
+  while (pc < numInstructions) {
+    // console.log(pc, instructions[pc].opcode);
+    pc = executeInstruction(pc, instructions[pc], mem);
+
+    if (i > 1000) break; //TEMP
+    i += 1;
+  }
+}
+
+function executeInstruction(
+  pc: number,
+  i: Instruction,
+  mem: Uint8ClampedArray,
+): number {
+  const a = numFromValue(i.arg1, mem);
+  const b = numFromValue(i.arg2, mem);
+  const dest = numFromValue(i.dest, mem);
+
+  // prettier-ignore
+  switch (i.opcode) {
+    case "add": add(a, b, dest, mem); break;
+    case "sub": sub(a, b, dest, mem); break;
+    case "mul": mul(a, b, dest, mem); break;
+    case "div": div(a, b, dest, mem); break;
+    case "mod": mod(a, b, dest, mem); break;
+
+    case "lsh": lsh(a, b, dest, mem); break;
+    case "rsh": rsh(a, b, dest, mem); break;
+    case "and": and(a, b, dest, mem); break;
+    case "or":   or(a, b, dest, mem); break;
+    case "xor": xor(a, b, dest, mem); break;
+
+    case "jeq": return jeq(a, b, dest, pc);
+    case "jne": return jne(a, b, dest, pc);
+
+    default: throw new Error(`instruction not implemented '${i.opcode}'`);
+  }
+
+  return pc + 1;
+}
+
+function numFromValue(val: Value, mem: Uint8ClampedArray): number {
+  switch (val.type) {
+    case "immediate":
+      return val.value;
+    case "pointer":
+      return mem[val.value]; //TODO 32-bit
+    case "instruction-index":
+      return val.value;
+  }
+}
+
+/* MEMORY */
+function add(a: number, b: number, dest: number, mem: Uint8ClampedArray) {
+  mem[dest] = a + b;
+}
+
+function sub(a: number, b: number, dest: number, mem: Uint8ClampedArray) {
+  mem[dest] = a - b;
+}
+
+function mul(a: number, b: number, dest: number, mem: Uint8ClampedArray) {
+  mem[dest] = a * b;
+}
+
+function div(a: number, b: number, dest: number, mem: Uint8ClampedArray) {
+  mem[dest] = Math.floor(a / b);
+}
+
+function mod(a: number, b: number, dest: number, mem: Uint8ClampedArray) {
+  mem[dest] = a % b;
+}
+
+function lsh(a: number, b: number, dest: number, mem: Uint8ClampedArray) {
+  mem[dest] = a << b;
+}
+
+function rsh(a: number, b: number, dest: number, mem: Uint8ClampedArray) {
+  mem[dest] = a >>> b;
+}
+
+function and(a: number, b: number, dest: number, mem: Uint8ClampedArray) {
+  mem[dest] = a & b;
+}
+
+function or(a: number, b: number, dest: number, mem: Uint8ClampedArray) {
+  mem[dest] = a | b;
+}
+
+function xor(a: number, b: number, dest: number, mem: Uint8ClampedArray) {
+  mem[dest] = a ^ b;
+}
+
+/* CONTROL */
+function jeq(a: number, b: number, dest: number, pc: number): number {
+  return a === b ? dest : pc + 1;
+}
+
+function jne(a: number, b: number, dest: number, pc: number): number {
+  return a !== b ? dest : pc + 1;
+}

@@ -1,8 +1,10 @@
+import * as Interpreter from "./interpreter";
+
 export * from "./interpreter";
 
 const screenSize: [number, number] = [480, 270];
 const memorySize: number = 1024 * 1024 * 32; // 32MB
-const memory: Uint8ClampedArray = new Uint8ClampedArray(memorySize);
+const _memory: Uint8ClampedArray = new Uint8ClampedArray(memorySize);
 
 const stepInterval: number = 1 / 60;
 const maxSteps: number = 10;
@@ -45,18 +47,16 @@ export function update(ts: DOMHighResTimeStamp) {
   if (elapsedTime >= stepInterval) elapsedTime = 0;
 
   // update canvas
-  screenPixels.data.set(memory.slice(0, 4 * screenSize[0] * screenSize[1])); //TODO point to SCREEN mem slice
+  screenPixels.data.set(_memory.slice(0, 4 * screenSize[0] * screenSize[1])); //TODO point to SCREEN mem slice
   gfx.putImageData(screenPixels, 0, 0);
 
   previousTime = ts;
 }
 
-function step() {
-  paint(); //TEMP
+export function memory(): Uint8ClampedArray {
+  return _memory;
 }
 
-let pixel = 3;
-function paint() {
-  memory[pixel] ^= 255;
-  pixel += 4 * 25;
+function step() {
+  Interpreter.execute();
 }

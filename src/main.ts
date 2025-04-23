@@ -2,11 +2,18 @@ import { Limit } from "./limit";
 import "./style.css";
 
 Limit.load(`
-# LIMIT
-add x0, 1, 1
-jeq 0, 0, END
+INIT:
+jeq x1, 1, UPDATE
 
-END:
+# set x1 to 1 (init flag)
+add 1, 0, 1
+
+# init x2 to 2
+add 2, 0, 2
+
+UPDATE:
+add 1, x2, 2
+add 255, 0, x2
 `);
 
 Limit.start();
