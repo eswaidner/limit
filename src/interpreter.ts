@@ -189,6 +189,11 @@ export function load(src: string) {
 
     const dest = parseValue(fields[4]);
 
+    // anything else must be a comment (has to start with '#')
+    if (fields.length > 5 && fields[5][0] !== "#") {
+      throw new Error(`invalid syntax (line ${i})`);
+    }
+
     instructions.push({ lineIndex: i, opcode, arg1, arg2, dest });
   }
 }
