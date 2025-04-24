@@ -2,7 +2,8 @@ import { Limit } from "./limit";
 
 let source: string[] = [];
 let instructions: Instruction[] = [];
-let labels: Map<string, number> = new Map();
+let symbols: Map<string, Value> = new Map();
+let labels: Set<string> = new Set();
 
 const maxInt32 = 2 ** 31 - 1;
 const minInt32 = -(2 ** 31);
@@ -22,6 +23,8 @@ const opcodes: Set<string> = new Set([
   "div",    "or" ,
   "mod",    "xor",
 ]);
+
+const controlOpcodes: Set<string> = new Set(["jeq", "jne"]);
 
 type Value = Immediate | MemoryAccess | InstructionIndex;
 
@@ -52,6 +55,10 @@ function isDigit(char: string): boolean {
   return char[0] >= "0" && char[0] <= "9";
 }
 
+function isSymbolChar(char: string): boolean {
+  return !!char[0].match(/[A-Z_]/);
+}
+
 function parseOpcode(src: string): Op {
   if (!opcodes.has(src)) throw new Error(`unknown instruction '${src}'`);
   return src as Op;
@@ -60,7 +67,7 @@ function parseOpcode(src: string): Op {
 function parseValue(src: string): Value {
   if (src[0] === "[") return parseMemoryAccess(src);
   if (isDigit(src[0]) || src[0] === "-") return parseImmediate(src);
-  else return parseLabel(src);
+  else return parseSymbol(src);
 }
 
 function parseImmediate(src: string): Immediate {
@@ -109,15 +116,15 @@ function parseMemoryAccess(src: string): MemoryAccess {
   return { type: "memory-access", value: address };
 }
 
-function parseLabel(src: string): InstructionIndex {
-  const value = labels.get(src);
-  if (value === undefined) throw new Error(`undefined label '${src}'`);
-  return { type: "instruction-index", value };
+function parseSymbol(src: string): Value {
+  const value = symbols.get(src);
+  if (value === undefined) throw new Error(`undefined symbol '${src}'`);
+  return value;
 }
 
-function validateLabel(name: string) {
-  if (!name.match(/[a-zA-Z_][0-9a-zA-Z_]./)) {
-    throw new Error(`invalid label '${name}'`);
+function validateSymbol(name: string) {
+  if (!name.match(/[A-Z_][0-9A-Z_]./)) {
+    throw new Error(`invalid symbol name '${name}'`);
   }
 }
 
@@ -135,18 +142,36 @@ export function load(src: string) {
     // skip blank lines
     if (line.length <= 0) continue;
 
-    // treat as label definition
-    const endIdx = line.length - 1;
-    if (line[endIdx] === ":") {
-      const name = line.slice(0, endIdx);
-      validateLabel(name);
+    // treat as symbol definition
+    if (isSymbolChar(line[0])) {
+      const fields = line.split(/\s/);
+      const name = fields[0];
 
-      if (labels.has(name)) {
-        throw new Error(`label redefinition '${name}' at line ${i}`);
+      validateSymbol(name);
+
+      if (symbols.has(name)) {
+        throw new Error(`symbol redefinition '${name}' at line ${i}`);
       }
 
-      labels.set(name, instructionCount);
-      continue;
+      // treat as label
+      if (fields.length === 1 || fields[1] === "#") {
+        labels.add(name);
+        symbols.set(name, {
+          type: "instruction-index",
+          value: instructionCount,
+        });
+
+        continue;
+      }
+
+      // treat as value symbol
+      if (fields[1] === "=" && fields.length > 2) {
+        // treat as value symbol
+        symbols.set(name, parseValue(fields[2]));
+        continue;
+      }
+
+      throw new Error(`invalid symbol definition syntax (line ${i})`);
     }
 
     instructionCount += 1;
@@ -161,16 +186,15 @@ export function load(src: string) {
     if (line[0] === "#") continue;
 
     const fields = line
-      .split(" ")
+      .split(/\s/)
       .map((f) => f.trim())
       .filter((f) => f.length > 0);
 
     // skip blank lines
     if (fields.length <= 0) continue;
 
-    // skip label definitions
-    const endIdx = fields[0].length - 1;
-    if (fields[0][endIdx] === ":") continue;
+    // skip symbol definitions
+    if (symbols.has(fields[0])) continue;
 
     const opcode = parseOpcode(fields[0]);
 
@@ -188,6 +212,11 @@ export function load(src: string) {
     if (outArrow !== "->") throw new Error(`missing output arrow`);
 
     const dest = parseValue(fields[4]);
+    if (controlOpcodes.has(opcode) && dest.type !== "instruction-index") {
+      throw new Error(
+        `'${opcode}' requires a label for dest arg, got ${fields[4]} (line ${i})`,
+      );
+    }
 
     // anything else must be a comment (has to start with '#')
     if (fields.length > 5 && fields[5][0] !== "#") {
