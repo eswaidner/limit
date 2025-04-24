@@ -4,8 +4,9 @@ let source: string[] = [];
 let instructions: Instruction[] = [];
 let labels: Map<string, number> = new Map();
 
-const maxInt32 = 31 ** 2 - 1;
-const minInt32 = -(31 ** 2);
+const maxInt32 = 2 ** 31 - 1;
+const minInt32 = -(2 ** 31);
+const maxUint32 = 2 ** 32 - 1;
 
 type Op = MemoryOp | ControlOp;
 
@@ -22,15 +23,15 @@ const opcodes: Set<string> = new Set([
   "mod",    "xor",
 ]);
 
-type Value = Immediate | Pointer | InstructionIndex;
+type Value = Immediate | MemoryAccess | InstructionIndex;
 
 interface Immediate {
   type: "immediate";
   value: number;
 }
 
-interface Pointer {
-  type: "pointer";
+interface MemoryAccess {
+  type: "memory-access";
   value: number;
 }
 
@@ -57,8 +58,8 @@ function parseOpcode(src: string): Op {
 }
 
 function parseValue(src: string): Value {
-  if (src[0] === "x") return parsePointer(src);
-  if (isDigit(src[0])) return parseImmediate(src);
+  if (src[0] === "[") return parseMemoryAccess(src);
+  if (isDigit(src[0]) || src[0] === "-") return parseImmediate(src);
   else return parseLabel(src);
 }
 
@@ -84,18 +85,28 @@ function parseImmediate(src: string): Immediate {
 
   if (isNaN(value)) throw new Error(`invalid immediate '${src}'`);
 
-  if (value > maxInt32 || value < minInt32) {
-    throw new Error(`immediate out of range '${src}'`);
+  if (base === 10) {
+    if (value > maxInt32 || value < minInt32) {
+      throw new Error(`immediate out of range '${src}'`);
+    }
+  } else {
+    if (value > maxUint32) {
+      throw new Error(`immediate out of range '${src}'`);
+    }
   }
 
   return { type: "immediate", value };
 }
 
-function parsePointer(src: string): Pointer {
-  const address = parseInt(src.slice(1, src.length));
+function parseMemoryAccess(src: string): MemoryAccess {
+  if (src[0] !== "[" || src[src.length - 1] !== "]") {
+    throw new Error(`invalid memory access syntax '${src}'`);
+  }
+
+  const address = parseInt(src.slice(1, src.length - 1));
   //TODO check if in memory address range
 
-  return { type: "pointer", value: address };
+  return { type: "memory-access", value: address };
 }
 
 function parseLabel(src: string): InstructionIndex {
@@ -150,7 +161,6 @@ export function load(src: string) {
     if (line[0] === "#") continue;
 
     const fields = line
-      .replace(",", " ")
       .split(" ")
       .map((f) => f.trim())
       .filter((f) => f.length > 0);
@@ -174,7 +184,10 @@ export function load(src: string) {
       throw new Error(`arg2 cannot be a label (line ${i})`);
     }
 
-    const dest = parseValue(fields[3]);
+    const outArrow = fields[3];
+    if (outArrow !== "->") throw new Error(`missing output arrow`);
+
+    const dest = parseValue(fields[4]);
 
     instructions.push({ lineIndex: i, opcode, arg1, arg2, dest });
   }
@@ -188,7 +201,6 @@ export function execute() {
   let i = 0;
   const numInstructions = instructions.length;
   while (pc < numInstructions) {
-    // console.log(pc, instructions[pc].opcode);
     pc = executeInstruction(pc, instructions[pc], mem);
 
     if (i > 1000) break; //TEMP
@@ -199,7 +211,7 @@ export function execute() {
 function executeInstruction(
   pc: number,
   i: Instruction,
-  mem: Uint8ClampedArray,
+  mem: Uint32Array,
 ): number {
   const a = numFromValue(i.arg1, mem);
   const b = numFromValue(i.arg2, mem);
@@ -228,55 +240,55 @@ function executeInstruction(
   return pc + 1;
 }
 
-function numFromValue(val: Value, mem: Uint8ClampedArray): number {
+function numFromValue(val: Value, mem: Uint32Array): number {
   switch (val.type) {
     case "immediate":
       return val.value;
-    case "pointer":
-      return mem[val.value]; //TODO 32-bit
+    case "memory-access":
+      return mem[val.value];
     case "instruction-index":
       return val.value;
   }
 }
 
 /* MEMORY */
-function add(a: number, b: number, dest: number, mem: Uint8ClampedArray) {
+function add(a: number, b: number, dest: number, mem: Uint32Array) {
   mem[dest] = a + b;
 }
 
-function sub(a: number, b: number, dest: number, mem: Uint8ClampedArray) {
+function sub(a: number, b: number, dest: number, mem: Uint32Array) {
   mem[dest] = a - b;
 }
 
-function mul(a: number, b: number, dest: number, mem: Uint8ClampedArray) {
+function mul(a: number, b: number, dest: number, mem: Uint32Array) {
   mem[dest] = a * b;
 }
 
-function div(a: number, b: number, dest: number, mem: Uint8ClampedArray) {
+function div(a: number, b: number, dest: number, mem: Uint32Array) {
   mem[dest] = Math.floor(a / b);
 }
 
-function mod(a: number, b: number, dest: number, mem: Uint8ClampedArray) {
+function mod(a: number, b: number, dest: number, mem: Uint32Array) {
   mem[dest] = a % b;
 }
 
-function lsh(a: number, b: number, dest: number, mem: Uint8ClampedArray) {
+function lsh(a: number, b: number, dest: number, mem: Uint32Array) {
   mem[dest] = a << b;
 }
 
-function rsh(a: number, b: number, dest: number, mem: Uint8ClampedArray) {
+function rsh(a: number, b: number, dest: number, mem: Uint32Array) {
   mem[dest] = a >>> b;
 }
 
-function and(a: number, b: number, dest: number, mem: Uint8ClampedArray) {
+function and(a: number, b: number, dest: number, mem: Uint32Array) {
   mem[dest] = a & b;
 }
 
-function or(a: number, b: number, dest: number, mem: Uint8ClampedArray) {
+function or(a: number, b: number, dest: number, mem: Uint32Array) {
   mem[dest] = a | b;
 }
 
-function xor(a: number, b: number, dest: number, mem: Uint8ClampedArray) {
+function xor(a: number, b: number, dest: number, mem: Uint32Array) {
   mem[dest] = a ^ b;
 }
 

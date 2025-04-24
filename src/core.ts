@@ -2,9 +2,14 @@ import * as Interpreter from "./interpreter";
 
 export * from "./interpreter";
 
-const screenSize: [number, number] = [480, 270];
+const size: [number, number] = [480, 270];
 const memorySize: number = 1024 * 1024 * 32; // 32MB
-const _memory: Uint8ClampedArray = new Uint8ClampedArray(memorySize);
+
+const memBuffer = new ArrayBuffer(memorySize);
+const _memory = new Uint32Array(memBuffer);
+
+//TODO offset to SCREEN mem slice
+const screen = new Uint8ClampedArray(memBuffer, 0, 4 * size[0] * size[1]);
 
 const stepInterval: number = 1 / 60;
 const maxSteps: number = 10;
@@ -13,11 +18,11 @@ let previousTime: DOMHighResTimeStamp = 0;
 let shouldExit: boolean = false;
 
 const canvas = document.querySelector("#app-canvas")! as HTMLCanvasElement;
-canvas.width = screenSize[0];
-canvas.height = screenSize[1];
+canvas.width = size[0];
+canvas.height = size[1];
 
 const gfx = canvas.getContext("2d")!; //TODO handle errors
-const screenPixels = gfx.createImageData(screenSize[0], screenSize[1]);
+const screenPixels = gfx.createImageData(size[0], size[1]);
 
 export function start() {
   shouldExit = false;
@@ -47,13 +52,13 @@ export function update(ts: DOMHighResTimeStamp) {
   if (elapsedTime >= stepInterval) elapsedTime = 0;
 
   // update canvas
-  screenPixels.data.set(_memory.slice(0, 4 * screenSize[0] * screenSize[1])); //TODO point to SCREEN mem slice
+  screenPixels.data.set(screen);
   gfx.putImageData(screenPixels, 0, 0);
 
   previousTime = ts;
 }
 
-export function memory(): Uint8ClampedArray {
+export function memory(): Uint32Array {
   return _memory;
 }
 
