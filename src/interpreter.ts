@@ -8,23 +8,24 @@ let labels: Set<string> = new Set();
 const maxInt32 = 2 ** 31 - 1;
 const minInt32 = -(2 ** 31);
 const maxUint32 = 2 ** 32 - 1;
+const maxUint24 = 2 ** 24 - 1;
 
 type Op = MemoryOp | ControlOp;
 
 // prettier-ignore
 type MemoryOp = "add" | "sub" | "mul" | "div" | "mod" | "lsh" | "rsh" | "and" | "or" | "xor";
-type ControlOp = "jeq" | "jne";
+type ControlOp = "jeq" | "jne" | "jgt" | "jlt";
 
 // prettier-ignore
 const opcodes: Set<string> = new Set([
   "add",    "lsh",    "jeq",
   "sub",    "rsh",    "jne",
-  "mul",    "and",
-  "div",    "or" ,
+  "mul",    "and",    "jgt",
+  "div",    "or" ,    "jlt",
   "mod",    "xor",
 ]);
 
-const controlOpcodes: Set<string> = new Set(["jeq", "jne"]);
+const controlOpcodes: Set<string> = new Set(["jeq", "jne", "jgt", "jlt"]);
 
 type Value = Immediate | MemoryAccess | InstructionIndex;
 
@@ -35,7 +36,7 @@ interface Immediate {
 
 interface MemoryAccess {
   type: "memory-access";
-  value: number;
+  value: Value;
 }
 
 interface InstructionIndex {
@@ -111,9 +112,12 @@ function parseMemoryAccess(src: string): MemoryAccess {
   }
 
   const address = parseValue(src.slice(1, src.length - 1));
-  //TODO check if in memory address range
 
-  return { type: "memory-access", value: address.value };
+  if (address.type !== "memory-access" && address.value > maxUint24) {
+    throw new Error(`memory access out of range '${src}'`);
+  }
+
+  return { type: "memory-access", value: address };
 }
 
 function parseSymbol(src: string): Value {
@@ -237,7 +241,11 @@ export function execute() {
   while (pc < numInstructions) {
     pc = executeInstruction(pc, instructions[pc], mem);
 
-    if (i > 1000) break; //TEMP
+    //TEMP
+    if (i > 1000000) {
+      console.log("warning: exceeded instruction limit");
+      break;
+    }
     i += 1;
   }
 }
@@ -267,6 +275,8 @@ function executeInstruction(
 
     case "jeq": return jeq(a, b, dest, pc);
     case "jne": return jne(a, b, dest, pc);
+    case "jgt": return jgt(a, b, dest, pc);
+    case "jlt": return jlt(a, b, dest, pc);
 
     default: throw new Error(`instruction not implemented '${i.opcode}'`);
   }
@@ -279,7 +289,9 @@ function numFromValue(val: Value, mem: Uint32Array): number {
     case "immediate":
       return val.value;
     case "memory-access":
-      return mem[val.value];
+      const address = numFromValue(val.value, mem);
+      if (address > maxUint24) throw new Error(`memory access out of range`);
+      return mem[address];
     case "instruction-index":
       return val.value;
   }
@@ -333,4 +345,12 @@ function jeq(a: number, b: number, dest: number, pc: number): number {
 
 function jne(a: number, b: number, dest: number, pc: number): number {
   return a !== b ? dest : pc + 1;
+}
+
+function jgt(a: number, b: number, dest: number, pc: number): number {
+  return a > b ? dest : pc + 1;
+}
+
+function jlt(a: number, b: number, dest: number, pc: number): number {
+  return a < b ? dest : pc + 1;
 }

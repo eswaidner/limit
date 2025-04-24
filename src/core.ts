@@ -3,7 +3,7 @@ import * as Interpreter from "./interpreter";
 export * from "./interpreter";
 
 const size: [number, number] = [480, 270];
-const memorySize: number = 1024 * 1024 * 32; // 32MB
+const memorySize: number = 1024 * 1024 * 64; // 32MB
 
 const memBuffer = new ArrayBuffer(memorySize);
 const _memory = new Uint32Array(memBuffer);
