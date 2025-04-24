@@ -5,7 +5,7 @@ Limit.load(`
 INIT_FLAG = 1
 
 INIT
-jeq [1] 1 -> UPDATE
+jeq [INIT_FLAG] 1 -> UPDATE
 
 # set init flag
 add 1 0 -> INIT_FLAG

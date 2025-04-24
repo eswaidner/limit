@@ -110,10 +110,10 @@ function parseMemoryAccess(src: string): MemoryAccess {
     throw new Error(`invalid memory access syntax '${src}'`);
   }
 
-  const address = parseInt(src.slice(1, src.length - 1));
+  const address = parseValue(src.slice(1, src.length - 1));
   //TODO check if in memory address range
 
-  return { type: "memory-access", value: address };
+  return { type: "memory-access", value: address.value };
 }
 
 function parseSymbol(src: string): Value {
