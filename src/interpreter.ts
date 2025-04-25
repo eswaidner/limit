@@ -13,7 +13,7 @@ const maxUint24 = 2 ** 24 - 1;
 type Op = MemoryOp | ControlOp;
 
 // prettier-ignore
-type MemoryOp = "add" | "sub" | "mul" | "div" | "mod" | "lsh" | "rsh" | "and" | "or" | "xor";
+type MemoryOp = "add" | "sub" | "mul" | "div" | "mod" | "lsh" | "rsh" | "and" | "or" | "xor" | "set";
 type ControlOp = "jeq" | "jne" | "jgt" | "jlt";
 
 // prettier-ignore
@@ -22,7 +22,7 @@ const opcodes: Set<string> = new Set([
   "sub",    "rsh",    "jne",
   "mul",    "and",    "jgt",
   "div",    "or" ,    "jlt",
-  "mod",    "xor",
+  "mod",    "xor",    "set",
 ]);
 
 const controlOpcodes: Set<string> = new Set(["jeq", "jne", "jgt", "jlt"]);
@@ -273,6 +273,8 @@ function executeInstruction(
     case "or":   or(a, b, dest, mem); break;
     case "xor": xor(a, b, dest, mem); break;
 
+    case "set": set(a, b, dest, mem); break;
+
     case "jeq": return jeq(a, b, dest, pc);
     case "jne": return jne(a, b, dest, pc);
     case "jgt": return jgt(a, b, dest, pc);
@@ -336,6 +338,10 @@ function or(a: number, b: number, dest: number, mem: Uint32Array) {
 
 function xor(a: number, b: number, dest: number, mem: Uint32Array) {
   mem[dest] = a ^ b;
+}
+
+function set(value: number, len: number, start: number, mem: Uint32Array) {
+  mem.subarray(start, start + len).fill(value);
 }
 
 /* CONTROL */
